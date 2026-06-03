@@ -708,7 +708,7 @@
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
             container.addEventListener('click', onMapClick);
-            fetch('https://geo.datav.aliyun.com/areas_v3/bound/410000_full.json')
+            fetch('./data/henan.json')
                 .then(res => {
                     if (!res.ok) throw new Error('网络请求失败');
                     return res.json();
