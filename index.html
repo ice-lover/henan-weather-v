@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>河南省天气三维数据可视化大屏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.292.0/dist/umd/lucide.min.js"></script>
+    <style>
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .bg-dark {
+            background-color: #050a1a;
+            background-image: 
+                radial-gradient(circle at 50% 50%, #0a1631 0%, #050a1a 100%),
+                linear-gradient(rgba(18, 32, 64, 0.2) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(18, 32, 64, 0.2) 1px, transparent 1px);
+            background-size: 100% 100%, 40px 40px, 40px 40px;
+        }
+        .panel-bg {
+            background: rgba(10, 25, 50, 0.7);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.1) inset;
+            backdrop-filter: blur(10px);
+        }
+        .title-gradient {
+            background: linear-gradient(to bottom, #fff, #00ffff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #map-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        .panel-header {
+            background: linear-gradient(90deg, rgba(0, 255, 255, 0.2) 0%, transparent 100%);
+            border-left: 4px solid #00ffff;
+            padding: 4px 12px;
+            font-weight: bold;
+            color: #00ffff;
+            margin-bottom: 12px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .panel-header::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.4), transparent);
+            animation: scan 3s infinite;
+        }
+        @keyframes scan {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        .weather-icon-glow {
+            filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.8));
+        }
+        .legend-container {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(10, 25, 50, 0.8);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            padding: 10px;
+            border-radius: 4px;
+            z-index: 20;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        /* Global Dropdown Styles */
+        .dropdown-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .dropdown-label {
+            color: #00ffff;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            font-size: 14px;
+        }
+        .dropdown-select {
+            background: rgba(10, 25, 50, 0.9);
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            color: #00ffff;
+            padding: 8px 30px 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            outline: none;
+            backdrop-filter: blur(10px);
+            appearance: none;
+            -webkit-appearance: none;
+            min-width: 120px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2300ffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 16px;
+            transition: all 0.3s;
+        }
+        .sidebar-hidden {
+            transform: translateX(-110%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .sidebar-right-hidden {
+            transform: translateX(110%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .sidebar-transition {
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* Scenic Recommendation Panel V2 - Refined */
+        .scenic-container {
+            position: absolute;
+            top: 100px;
+            bottom: 40px;
+            width: calc(25% - 40px); /* Fill exactly the sidebar width minus padding */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            z-index: 5;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* Absolute positioning relative to the <main> container */
+        .scenic-container-left { left: 20px; }
+        .scenic-container-right { right: 20px; }
+        
+        .scenic-container.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9);
+        }
+
+        .scenic-card-v2 {
+            background: rgba(10, 25, 50, 0.8);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 8px;
+            width: 100%;
+            height: 180px; /* Unified height */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(15px);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scenic-card-v2:hover {
+            border-color: #ffd700;
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(255, 215, 0, 0.15);
+        }
+
+        /* Image Placeholder */
+        .scenic-img-box {
+            width: 100%;
+            height: 90px;
+            background: #0a1631;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.1);
+        }
+        
+        .scenic-img-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+            opacity: 0.8;
+        }
+
+        .scenic-card-v2:hover .scenic-img-box img {
+            transform: scale(1.1);
+            opacity: 1;
+        }
+
+        .scenic-img-box::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, transparent 60%, rgba(10, 25, 50, 0.8));
+            pointer-events: none;
+        }
+
+        .scenic-info-v2 {
+            padding: 10px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .scenic-name-v2 {
+            font-size: 15px;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .scenic-location-v2 {
+            font-size: 10px;
+            color: #00ffff;
+            opacity: 0.6;
+            margin-bottom: 4px;
+        }
+        .scenic-desc-v2 {
+            font-size: 11px;
+            color: #ccc;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3; /* More lines for detail */
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .city-label {
+            color: #00ffff;
+            font-size: 12px;
+            text-shadow: 0 0 5px #000;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="bg-dark text-white overflow-hidden h-screen flex flex-col">
+    <!-- Header -->
+    <header class="h-16 flex items-center justify-between px-8 border-b border-cyan-900 relative z-10 bg-black/40 backdrop-blur-md">
+        <div class="flex items-center space-x-4">
+            <i data-lucide="cloud-sun" class="text-cyan-400 w-8 h-8 weather-icon-glow"></i>
+            <div class="text-2xl font-bold tracking-widest title-gradient">河南省天气三维数据可视化大屏</div>
+        </div>
+        <div class="flex items-center space-x-6 text-cyan-300">
+            <div class="flex flex-col items-end">
+                <div id="current-time" class="font-mono text-lg">2026-06-02 18:00:00</div>
+                <div id="data-update-time" class="text-[10px] text-cyan-500/80">数据更新时间: 2026-06-02 18:00 (每小时更新)</div>
+            </div>
+            <div class="flex items-center space-x-2 border-l border-cyan-800 pl-6">
+                <i data-lucide="map-pin" class="w-4 h-4 text-cyan-400"></i>
+                <span>中国·河南</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex p-4 gap-4 relative">
+        <div id="loading" class="absolute inset-0 z-50 flex items-center justify-center bg-dark/80">
+            <div class="flex flex-col items-center">
+                <div class="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                <div class="mt-4 text-cyan-400 tracking-widest">正在加载三维地图数据...</div>
+            </div>
+        </div>
+        <!-- Left Sidebar -->
+        <div id="left-sidebar" class="w-1/4 flex flex-col gap-4 z-10 sidebar-transition sidebar-hidden">
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-temp">24h气温预报</div>
+                <div id="chart-temp" class="w-full h-48"></div>
+            </div>
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-humidity">24h湿度预报</div>
+                <div id="chart-humidity" class="w-full h-48"></div>
+            </div>
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-wind">24h风速预报</div>
+                <div id="chart-wind" class="w-full h-48"></div>
+            </div>
+        </div>
+
+        <!-- Center Map -->
+        <div class="flex-1 relative">
+            <div id="map-container"></div>
+            
+            <!-- Legend -->
+            <div id="map-legend" class="legend-container">
+                <div class="text-xs text-cyan-400 mb-2 font-bold" id="legend-title">图例</div>
+                <div id="legend-items"></div>
+            </div>
+            <!-- Global Switch Dropdown -->
+            <div class="dropdown-container">
+                <div class="dropdown-label">全局</div>
+                <select class="dropdown-select" id="global-selector" onchange="toggleGlobalView(this.value)">
+                    <option value="temp">气温</option>
+                    <option value="humidity">湿度</option>
+                    <option value="aqi">空气质量</option>
+                    <option value="rain">降水量</option>
+                </select>
+            </div>
+            <!-- Map Overlay Info -->
+            <div class="absolute top-4 left-4 p-4 panel-bg rounded pointer-events-none transition-all opacity-0 scale-95" id="info-panel">
+                <div class="text-sm text-cyan-400 mb-1" id="info-label">当前查看城市</div>
+                <div class="text-2xl font-bold" id="selected-city">郑州市</div>
+                <div id="city-details">
+                    <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>温度: <span class="text-yellow-400" id="city-temp">28°C</span></div>
+                        <div>天气: <span class="text-blue-400" id="city-weather">晴</span></div>
+                        <div>湿度: <span class="text-green-400" id="city-hum">45%</span></div>
+                        <div>风向: <span class="text-cyan-400" id="city-wind">东南风</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="scenic-left" class="scenic-container scenic-container-left">
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/longmen.jpg" alt="龙门石窟">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="image" class="w-4 h-4"></i>龙门石窟</div>
+                    <div class="scenic-location-v2">河南省洛阳市 · 世界文化遗产</div>
+                    <div class="scenic-desc-v2">中国石刻艺术的巅峰之作，历经北魏至宋朝400余年营造，现存窟龛2300余个，造像10万余尊，展现了极高的艺术成就。</div>
+                </div>
+            </div>
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/shaolin.jpg" alt="嵩山少林寺">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="building-2" class="w-4 h-4"></i>嵩山少林寺</div>
+                    <div class="scenic-location-v2">河南省郑州市 · 禅宗祖庭</div>
+                    <div class="scenic-desc-v2">天下第一名刹，以少林功夫闻名于世。始建于北魏太和年间，是世界文化遗产“天地之中”建筑群的核心组成部分。</div>
+                </div>
+            </div>
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/yuntaishan.jpg" alt="云台山">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="mountain" class="w-4 h-4"></i>云台山</div>
+                    <div class="scenic-location-v2">河南省焦作市 · 世界地质公园</div>
+                    <div class="scenic-desc-v2">以独特的“云台地貌”著称，红石峡的丹霞奇观与泉瀑峡的雄伟壮丽相得益彰，是大自然鬼斧神工的杰作。</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="scenic-right" class="scenic-container scenic-container-right">
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/yinxu.jpg" alt="殷墟">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="landmark" class="w-4 h-4"></i>殷墟</div>
+                    <div class="scenic-location-v2">河南省安阳市 · 商代都城遗址</div>
+                    <div class="scenic-desc-v2">中国历史上第一个有文献可考并为考古证实的都城遗址，出土了大量甲骨文与青铜器，是华夏文明的根脉所在。</div>
+                </div>
+            </div>
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/qingming.jpg" alt="清明上河园">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="tent" class="w-4 h-4"></i>清明上河园</div>
+                    <div class="scenic-location-v2">河南省开封市 · 宋代主题公园</div>
+                    <div class="scenic-desc-v2">以名画《清明上河图》为蓝本，1:1复原的北宋都城汴京，带您跨越千年体验繁华的宋代市井生活与文化韵味。</div>
+                </div>
+            </div>
+            <div class="scenic-card-v2">
+                <div class="scenic-img-box">
+                    <img src="./images/laojunshan.jpg" alt="老君山">
+                </div>
+                <div class="scenic-info-v2">
+                    <div class="scenic-name-v2"><i data-lucide="cloud" class="w-4 h-4"></i>老君山</div>
+                    <div class="scenic-location-v2">河南省洛阳市 · 道道圣地</div>
+                    <div class="scenic-desc-v2">相传为道教始祖老子隐居修炼之地，海拔2217米，金顶建筑群巍峨壮观，云海霞光中如入仙境，意境超然。</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div id="right-sidebar" class="w-1/4 flex flex-col gap-4 z-10 sidebar-transition sidebar-right-hidden">
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-forecast">未来7日预报</div>
+                <div id="chart-forecast" class="w-full h-48"></div>
+            </div>
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-aqi">实时空气质量</div>
+                <div id="chart-aqi" class="w-full h-48"></div>
+            </div>
+            <div class="panel-bg flex-1 p-4 rounded-lg">
+                <div class="panel-header" id="header-rain">未来6h降水预报</div>
+                <div id="chart-rain" class="w-full h-48"></div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
+    <script>
+        lucide.createIcons();
+
+        function updateTime() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const date = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            const timeStr = `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`;
+            document.getElementById('current-time').textContent = timeStr;
+            
+            // 同步更新数据发布时间为当前小时整点
+            const updateStr = `数据更新时间: ${year}-${month}-${date} ${hours}:00 (每小时更新)`;
+            document.getElementById('data-update-time').textContent = updateStr;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        const henanCities = [
+            { name: '郑州市', value: [113.665412, 34.757975], temp: 28, weather: '晴', humidity: 45, wind: '东南风', windSpeed: 3.2, aqi: 42, rain: 0 },
+            { name: '开封市', value: [114.341447, 34.797049], temp: 27, weather: '多云', humidity: 48, wind: '南风', windSpeed: 2.8, aqi: 55, rain: 0 },
+            { name: '洛阳市', value: [112.434468, 34.663036], temp: 26, weather: '晴', humidity: 40, wind: '西风', windSpeed: 4.1, aqi: 60, rain: 0 },
+            { name: '平顶山市', value: [113.307718, 33.735241], temp: 29, weather: '晴', humidity: 42, wind: '南风', windSpeed: 2.5, aqi: 48, rain: 0 },
+            { name: '安阳市', value: [114.352482, 36.103442], temp: 25, weather: '多云', humidity: 55, wind: '北风', windSpeed: 5.4, aqi: 72, rain: 2 },
+            { name: '鹤壁市', value: [114.295444, 35.748236], temp: 25, weather: '阴', humidity: 60, wind: '北风', windSpeed: 4.8, aqi: 65, rain: 5 },
+            { name: '新乡市', value: [113.883991, 35.302616], temp: 26, weather: '晴', humidity: 45, wind: '南风', windSpeed: 3.0, aqi: 50, rain: 0 },
+            { name: '焦作市', value: [113.238266, 35.23904], temp: 27, weather: '晴', humidity: 43, wind: '西南风', windSpeed: 2.9, aqi: 58, rain: 0 },
+            { name: '濮阳市', value: [115.041299, 35.768234], temp: 24, weather: '小雨', humidity: 75, wind: '东北风', windSpeed: 6.2, aqi: 35, rain: 12 },
+            { name: '许昌市', value: [113.826063, 34.022956], temp: 28, weather: '晴', humidity: 46, wind: '南风', windSpeed: 2.7, aqi: 45, rain: 0 },
+            { name: '漯河市', value: [114.026405, 33.575868], temp: 28, weather: '晴', humidity: 47, wind: '南风', windSpeed: 2.6, aqi: 40, rain: 0 },
+            { name: '三门峡市', value: [111.194099, 34.777338], temp: 24, weather: '多云', humidity: 50, wind: '西风', windSpeed: 5.1, aqi: 52, rain: 1 },
+            { name: '南阳市', value: [112.528306, 32.990846], temp: 30, weather: '晴', humidity: 38, wind: '东南风', windSpeed: 2.4, aqi: 44, rain: 0 },
+            { name: '商丘市', value: [115.650497, 34.437054], temp: 27, weather: '晴', humidity: 52, wind: '东风', windSpeed: 3.5, aqi: 38, rain: 0 },
+            { name: '信阳市', value: [114.075031, 32.123274], temp: 26, weather: '雷阵雨', humidity: 80, wind: '东南风', windSpeed: 4.5, aqi: 30, rain: 25 },
+            { name: '周口市', value: [114.649653, 33.620357], temp: 28, weather: '晴', humidity: 48, wind: '南风', windSpeed: 2.9, aqi: 42, rain: 0 },
+            { name: '驻马店市', value: [114.024736, 32.980169], temp: 29, weather: '晴', humidity: 44, wind: '南风', windSpeed: 2.8, aqi: 46, rain: 0 },
+            { name: '济源市', value: [112.590047, 35.090378], temp: 26, weather: '晴', humidity: 42, wind: '西风', windSpeed: 3.1, aqi: 55, rain: 0 }
+        ];
+
+        const scenicSpots = [
+            { name: '龙门石窟', loc: '河南省洛阳市', desc: '世界文化遗产，中国石刻艺术的最高峰。历经北魏至北宋400余年营造，今存窟龛2300余个。', icon: 'palmtree' },
+            { name: '嵩山少林寺', loc: '河南省郑州市登封市', desc: '禅宗祖庭，武林圣地。天下第一名刹，以少林功夫闻名于世，是世界文化遗产“天地之中”的重要组成。', icon: 'shrine' },
+            { name: '云台山', loc: '河南省焦作市修武县', desc: '世界地质公园，以独具特色的“云台地貌”闻名。红石峡、潭瀑峡是大自然的鬼斧神工之作。', icon: 'mountain' },
+            { name: '殷墟', loc: '河南省安阳市', desc: '中国第一个有文献可考、并为考古学和甲骨文刻辞所证实的商代晚期都城遗址。', icon: 'landmark' },
+            { name: '清明上河园', loc: '河南省开封市', desc: '以画家张择端的写实画作《清明上河图》为蓝本，按1:1比例复原的大型宋代民俗风情文化主题公园。', icon: 'tent' },
+            { name: '老君山', loc: '河南省洛阳市栾川县', desc: '道教名山，传说是太上老君李耳修炼之地。金顶建筑群巍峨壮观，云海景观如入仙境。', icon: 'cloud-lightning' }
+        ];
+
+        let charts = {};
+        let currentGlobalParam = 'temp';
+        let currentCityName = null;
+
+        function toggleGlobalView(param) {
+            currentGlobalParam = param;
+            updateMapVisualization(param);
+            if (currentCityName) {
+                highlightSelectedCity(currentCityName);
+            }
+        }
+
+        function highlightSelectedCity(cityName) {
+            cityMeshes.forEach(m => {
+                const materials = Array.isArray(m.material) ? m.material : [m.material];
+                if (m.userData.name === cityName || (m.userData.name && m.userData.name.includes(cityName))) {
+                    materials.forEach(mat => {
+                        // 不再使用纯白色，而是使用金黄色光晕，并保持较低强度避免洗色
+                        mat.emissive.setHex(0xffd700); 
+                        mat.emissiveIntensity = 0.5;
+                    });
+                }
+            });
+        }
+
+        function updateCharts(cityName) {
+            currentCityName = cityName;
+            const city = henanCities.find(c => cityName.includes(c.name.replace('市', '')) || c.name.includes(cityName.replace('市', ''))) || henanCities[0];
+            
+            // Hide scenic recommendations and show sidebars
+            document.getElementById('scenic-left').classList.add('hidden');
+            document.getElementById('scenic-right').classList.add('hidden');
+            document.getElementById('left-sidebar').classList.remove('sidebar-hidden');
+            document.getElementById('right-sidebar').classList.remove('sidebar-right-hidden');
+            document.getElementById('info-panel').classList.remove('opacity-0', 'scale-95');
+            document.getElementById('info-panel').classList.add('opacity-100', 'scale-100');
+
+            document.getElementById('header-temp').textContent = city.name + ' 24h气温预报';
+            document.getElementById('header-humidity').textContent = city.name + ' 24h湿度预报';
+            document.getElementById('header-wind').textContent = city.name + ' 24h风速预报';
+            document.getElementById('header-forecast').textContent = city.name + ' 未来7日预报';
+            document.getElementById('header-aqi').textContent = city.name + ' 实时空气质量';
+            document.getElementById('header-rain').textContent = city.name + ' 未来6h降水预报';
+
+            const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
+            const tempHistory = hours.map((_, i) => city.temp + Math.sin(i / 3) * 5 - 2);
+            const humHistory = hours.map((_, i) => city.humidity + Math.cos(i / 4) * 10);
+            const windHistory = hours.map(() => (Math.random() * 5 + city.windSpeed).toFixed(1));
+
+            charts.temp.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { top: 20, bottom: 30, left: 40, right: 10 },
+                xAxis: { type: 'category', data: hours, axisLabel: { color: '#8ec6ad', fontSize: 10, interval: 4 } },
+                yAxis: { type: 'value', axisLabel: { color: '#8ec6ad' } },
+                series: [{ name: '气温', data: tempHistory, type: 'line', smooth: true, itemStyle: { color: '#ffcc00' } }]
+            }, true);
+
+            charts.humidity.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { top: 20, bottom: 30, left: 40, right: 10 },
+                xAxis: { type: 'category', data: hours, axisLabel: { color: '#8ec6ad', fontSize: 10, interval: 4 } },
+                yAxis: { type: 'value', axisLabel: { color: '#8ec6ad' } },
+                series: [{ name: '湿度', data: humHistory, type: 'line', smooth: true, itemStyle: { color: '#00ffff' } }]
+            }, true);
+
+            charts.wind.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { top: 20, bottom: 30, left: 40, right: 10 },
+                xAxis: { type: 'category', data: hours, axisLabel: { color: '#8ec6ad', fontSize: 10, interval: 4 } },
+                yAxis: { type: 'value', axisLabel: { color: '#8ec6ad' } },
+                series: [{ name: '风速', data: windHistory, type: 'bar', itemStyle: { color: '#0066ff' } }]
+            }, true);
+
+            const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+            const highTemps = days.map((_, i) => city.temp + Math.random() * 4);
+            const lowTemps = highTemps.map(t => t - 8 - Math.random() * 3);
+            charts.forecast.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { top: 20, bottom: 30, left: 40, right: 10 },
+                xAxis: { type: 'category', data: days, axisLabel: { color: '#8ec6ad' } },
+                yAxis: { type: 'value', axisLabel: { color: '#8ec6ad' } },
+                series: [
+                    { name: '最高', type: 'line', data: highTemps, lineStyle: { color: '#ffcc00' } },
+                    { name: '最低', type: 'line', data: lowTemps, lineStyle: { color: '#00ffff' } }
+                ]
+            }, true);
+
+            const aqiValue = city.aqi;
+            charts.aqi.setOption({
+                title: { text: aqiValue, subtext: 'AQI指数', left: 'center', top: 'center', textStyle: { color: '#fff', fontSize: 24 } },
+                series: [{
+                    type: 'pie', radius: ['60%', '80%'],
+                    data: [
+                        { value: aqiValue, itemStyle: { color: aqiValue < 50 ? '#00ff00' : (aqiValue < 100 ? '#ffff00' : '#ff7e00') } },
+                        { value: 300 - aqiValue, itemStyle: { color: 'rgba(255,255,255,0.1)' } }
+                    ]
+                }]
+            }, true);
+
+            const rainData = Array.from({length: 6}, () => (Math.random() * city.rain * 1.5).toFixed(1));
+            charts.rain.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { top: 20, bottom: 30, left: 40, right: 10 },
+                xAxis: { type: 'category', data: ['+1h', '+2h', '+3h', '+4h', '+5h', '+6h'], axisLabel: { color: '#8ec6ad' } },
+                yAxis: { type: 'value', axisLabel: { color: '#8ec6ad' } },
+                series: [{ name: '预测降水', data: rainData, type: 'bar', itemStyle: { color: '#0066ff' } }]
+            }, true);
+        }
+
+        let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
+        let mapGroup = new THREE.Group();
+        let cityMeshes = [];
+
+        function updateMapVisualization(param) {
+            const configMap = {
+                'temp': {
+                    key: 'temp',
+                    ranges: [
+                        { min: -Infinity, max: 0, color: '#4575b4', label: '<0°C' },
+                        { min: 0, max: 10, color: '#91bfdb', label: '0-10°C' },
+                        { min: 10, max: 20, color: '#e0f3f8', label: '10-20°C' },
+                        { min: 20, max: 25, color: '#fee090', label: '20-25°C' },
+                        { min: 25, max: 30, color: '#fdae61', label: '25-30°C' },
+                        { min: 30, max: 35, color: '#f46d43', label: '30-35°C' },
+                        { min: 35, max: Infinity, color: '#d73027', label: '>35°C' }
+                    ]
+                },
+                'humidity': {
+                    key: 'humidity',
+                    ranges: [
+                        { min: 0, max: 30, color: '#edf8fb', label: '极干燥' },
+                        { min: 30, max: 50, color: '#b2e2e2', label: '干燥' },
+                        { min: 50, max: 70, color: '#66c2a4', label: '舒适' },
+                        { min: 70, max: 85, color: '#2ca25f', label: '潮湿' },
+                        { min: 85, max: 100, color: '#006d2c', label: '极潮湿' }
+                    ]
+                },
+                'aqi': {
+                    key: 'aqi',
+                    ranges: [
+                        { min: 0, max: 50, color: '#00e400', label: '优' },
+                        { min: 50, max: 100, color: '#ffff00', label: '良' },
+                        { min: 100, max: 150, color: '#ff7e00', label: '轻度' },
+                        { min: 150, max: 200, color: '#ff0000', label: '中度' },
+                        { min: 200, max: 300, color: '#99004c', label: '重度' },
+                        { min: 300, max: Infinity, color: '#7e0023', label: '严重' }
+                    ]
+                },
+                'rain': { 
+                    key: 'rain', 
+                    ranges: [
+                        { min: 0, max: 0.1, color: '#C2B280', label: '无雨' }, 
+                        { min: 0.1, max: 10, color: '#a6f28f', label: '小雨' }, 
+                        { min: 10, max: 25, color: '#3dba3d', label: '中雨' }, 
+                        { min: 25, max: 50, color: '#61b8ff', label: '大雨' }, 
+                        { min: 50, max: 100, color: '#0000ff', label: '暴雨' }, 
+                        { min: 100, max: Infinity, color: '#fa00fa', label: '大暴雨' }
+                    ] 
+                }
+            };
+            const config = configMap[param] || configMap['temp'];
+            const legendItems = document.getElementById('legend-items');
+            document.getElementById('legend-title').textContent = getParamName(param);
+            legendItems.innerHTML = '';
+            config.ranges.forEach(range => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `<div class="legend-color" style="background: ${range.color}"></div><span>${range.label}</span>`;
+                legendItems.appendChild(item);
+            });
+
+            cityMeshes.forEach(mesh => {
+                const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                const cityName = mesh.userData.name;
+                const city = henanCities.find(c => cityName.includes(c.name.replace('市', '')) || c.name.includes(cityName.replace('市', '')));
+
+                if (city) {
+                    const val = city[config.key];
+                    const range = config.ranges.find(r => val >= r.min && val < r.max);
+                    if (range) {
+                        materials.forEach((mat, idx) => {
+                            // 使用 MeshLambertMaterial 或关闭 Phong 的高光影响
+                            mat.color.set(range.color);
+                            mat.emissive.set(range.color);
+                            // 降低自发光强度，使其颜色更接近原始色，同时保持亮度
+                            mat.emissiveIntensity = idx === 0 ? 0.15 : 0.05;
+                        });
+                    }
+                }
+            });
+        }
+
+        function initMap() {
+            const container = document.getElementById('map-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, -30, 40);
+            camera.lookAt(0, 0, 0);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            labelRenderer = new THREE.CSS2DRenderer();
+            labelRenderer.setSize(container.clientWidth, container.clientHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none';
+            container.appendChild(labelRenderer.domElement);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(0, 50, 100);
+            scene.add(dirLight);
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.maxPolarAngle = Math.PI / 2.1;
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            container.addEventListener('click', onMapClick);
+            fetch('https://geo.datav.aliyun.com/areas_v3/bound/410000_full.json')
+                .then(res => res.json())
+                .then(data => {
+                    drawMap(data);
+                    document.getElementById('loading').style.display = 'none';
+                    toggleGlobalView('temp');
+                });
+            animate();
+        }
+
+        function onMapClick(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(cityMeshes);
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj && !obj.userData.name) obj = obj.parent;
+                if (obj && obj.userData.name) updateCityInfo(obj.userData.name);
+            } else {
+                // 点击空白处返回景区推荐视图
+                document.getElementById('scenic-left').classList.remove('hidden');
+                document.getElementById('scenic-right').classList.remove('hidden');
+                document.getElementById('left-sidebar').classList.add('sidebar-hidden');
+                document.getElementById('right-sidebar').classList.add('sidebar-right-hidden');
+                document.getElementById('info-panel').classList.remove('opacity-100', 'scale-100');
+                document.getElementById('info-panel').classList.add('opacity-0', 'scale-95');
+                currentCityName = null;
+                updateMapVisualization(currentGlobalParam);
+            }
+        }
+
+        function updateCityInfo(cityName) {
+            currentCityName = cityName;
+            const city = henanCities.find(c => cityName.includes(c.name.replace('市', '')) || c.name.includes(cityName.replace('市', ''))) || henanCities[0];
+            document.getElementById('info-label').textContent = '当前查看城市';
+            document.getElementById('selected-city').textContent = city.name;
+            document.getElementById('city-details').style.display = 'block';
+            document.getElementById('city-temp').textContent = city.temp + '°C';
+            document.getElementById('city-weather').textContent = city.weather;
+            document.getElementById('city-hum').textContent = city.humidity + '%';
+            document.getElementById('city-wind').textContent = city.wind;
+            updateCharts(city.name);
+            updateMapVisualization(currentGlobalParam);
+            highlightSelectedCity(city.name);
+            const iconMap = { '晴': 'sun', '多云': 'cloud-sun', '阴': 'cloud', '小雨': 'cloud-rain', '雷阵雨': 'cloud-lightning' };
+            const iconName = iconMap[city.weather] || 'cloud';
+            const iconContainer = document.querySelector('header i[data-lucide]');
+            if (iconContainer) {
+                iconContainer.setAttribute('data-lucide', iconName);
+                lucide.createIcons();
+            }
+        }
+
+        function drawMap(geoData) {
+            const projection = d3.geoMercator().center([113.6, 33.8]).scale(200).translate([0, 0]);
+            geoData.features.forEach(feature => {
+                const group = new THREE.Group();
+                const cityName = feature.properties.name;
+                feature.geometry.coordinates.forEach(multiPolygon => {
+                    multiPolygon.forEach(polygon => {
+                        if (typeof polygon[0][0] !== 'number') polygon.forEach(sub => createPolygonMesh(sub, projection, group, cityName));
+                        else createPolygonMesh(polygon, projection, group, cityName);
+                    });
+                });
+                const center = feature.properties.centroid || feature.properties.center || getPolygonCenter(feature.geometry.coordinates, projection);
+                if (center) {
+                    const [x, y] = projection(center);
+                    addMarker(x, -y, cityName);
+                }
+                group.userData = { name: cityName };
+                mapGroup.add(group);
+            });
+            scene.add(mapGroup);
+        }
+
+        function createPolygonMesh(polygon, projection, group, cityName) {
+            const shape = new THREE.Shape();
+            polygon.forEach((coord, i) => {
+                const [x, y] = projection(coord);
+                if (i === 0) shape.moveTo(x, -y);
+                else shape.lineTo(x, -y);
+            });
+            const geometry = new THREE.ExtrudeGeometry(shape, { depth: 2, bevelEnabled: false });
+            const faceMat = new THREE.MeshPhongMaterial({ color: 0x0a3a7a, shininess: 100 });
+            const sideMat = new THREE.MeshPhongMaterial({ color: 0x0a3a7a, shininess: 50 });
+            const mesh = new THREE.Mesh(geometry, [faceMat, sideMat]);
+            mesh.userData = { name: cityName };
+            cityMeshes.push(mesh);
+            const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(shape.getPoints()), new THREE.LineBasicMaterial({ color: 0x00ffff }));
+            line.position.z = 2.01;
+            group.add(mesh); group.add(line);
+        }
+
+        function getPolygonCenter(coordinates, projection) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            coordinates.flat(Infinity).forEach((val, i) => {
+                if (i % 2 === 0) { if (val < minX) minX = val; if (val > maxX) maxX = val; }
+                else { if (val < minY) minY = val; if (val > maxY) maxY = val; }
+            });
+            return [(minX + maxX) / 2, (minY + maxY) / 2];
+        }
+
+        function addMarker(x, y, name) {
+            const marker = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+            marker.position.set(x, y, 2.5);
+            scene.add(marker);
+            const div = document.createElement('div');
+            div.className = 'city-label';
+            div.textContent = name.replace('市', '');
+            const label = new THREE.CSS2DObject(div);
+            label.position.set(x, y, 3.5);
+            scene.add(label);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            if (mapGroup) {
+                mapGroup.rotation.z = Math.sin(Date.now() * 0.0005) * 0.01;
+                mapGroup.position.z = Math.sin(Date.now() * 0.001) * 0.2;
+            }
+            renderer.render(scene, camera);
+            if (labelRenderer) labelRenderer.render(scene, camera);
+        }
+
+        function initCharts() {
+            charts.temp = echarts.init(document.getElementById('chart-temp'));
+            charts.humidity = echarts.init(document.getElementById('chart-humidity'));
+            charts.wind = echarts.init(document.getElementById('chart-wind'));
+            charts.forecast = echarts.init(document.getElementById('chart-forecast'));
+            charts.aqi = echarts.init(document.getElementById('chart-aqi'));
+            charts.rain = echarts.init(document.getElementById('chart-rain'));
+            window.addEventListener('resize', () => Object.values(charts).forEach(c => c.resize()));
+        }
+
+        function getParamName(param) {
+            const names = { 'temp': '气温分布', 'humidity': '湿度分布', 'wind': '风速分布', 'aqi': '空气质量', 'rain': '降水量' };
+            return names[param] || '分布概览';
+        }
+
+        window.onload = () => { initCharts(); initMap(); };
+    </script>
+</body>
+</html>
