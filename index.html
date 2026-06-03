@@ -777,7 +777,7 @@
         }
 
         function drawMap(geoData) {
-            const projection = d3.geoMercator().center([113.6, 33.8]).scale(800).translate([0, 0]);
+            const projection = d3.geoMercator().center([113.6, 33.8]).scale(450).translate([0, 0]);
             geoData.features.forEach(feature => {
                 const group = new THREE.Group();
                 const cityName = feature.properties.name;
